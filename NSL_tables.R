@@ -60,6 +60,7 @@ make_graph_nsl = function(team_abbrev) {
   min_yr = min(data_for_graph$yr_end)
   max_yr = max(data_for_graph$yr_end)
   league_name = "NSL"
+  team_name = data_for_graph$current_name[1]
 
   #Breaks for background rectangles, other formatting
   # Update these values whenever the no. of teams in the league changes
@@ -86,7 +87,7 @@ make_graph_nsl = function(team_abbrev) {
     theme(panel.border = element_rect(fill=NA)) +
     
     # titles
-    ggtitle(paste("Position of", data_for_graph$current_name[1], "in", league_name, "from", start_yr, "to", end_yr)) + 
+    ggtitle(paste("Position of", team_name, "in", league_name, "from", start_yr, "to", end_yr)) + 
     theme(plot.title = element_text(lineheight=1.0, face="bold", hjust = 0.5)) +
     labs(x="Year", y="Position") +
     theme(axis.title = element_text(face = "bold")) +
@@ -95,10 +96,10 @@ make_graph_nsl = function(team_abbrev) {
 
     # horizontal lines for number of finals teams (approximated as 4 in years pre-1983 when no finals were held)
     {if(min_yr<1984)geom_segment(aes(x = min(yr_end), xend = min(max_yr,1983.5), y = 4.5, yend = 4.5), linetype="dotted", colour = "black", linewidth = 1)} +
-    {if((min_yr<1984)&(max_yr>1984))geom_segment(aes(x = 1983.5, xend = 1983.5, y = 4.5, yend = 5.5), linetype="dotted", colour = "black", linewidth = 1)} +
-    {if(max_yr>1984)geom_segment(aes(x = 1983.5, xend = 1992.5, y = 5.5, yend = 5.5), linetype="dotted", colour = "black", linewidth = 1)} +
-    {if((min_yr<1993)&(max_yr>1993))geom_segment(aes(x = 1992.5, xend = 1992.5, y = 5.5, yend = 6.5), linetype="dotted", colour = "black", linewidth = 1)} +
-    {if(max_yr>1993)geom_segment(aes(x = max(1992.5,min_yr), xend = max(yr_end), y = 6.5, yend = 6.5), linetype="dotted", colour = "black", linewidth = 1)}
+    {if((min_yr<1984)&(max_yr>=1984))geom_segment(aes(x = 1983.5, xend = 1983.5, y = 4.5, yend = 5.5), linetype="dotted", colour = "black", linewidth = 1)} +
+    {if((max_yr>=1984)&(min_yr<1993))geom_segment(aes(x = 1983.5, xend = 1992.5, y = 5.5, yend = 5.5), linetype="dotted", colour = "black", linewidth = 1)} +
+    {if((min_yr<1993)&(max_yr>=1993))geom_segment(aes(x = 1992.5, xend = 1992.5, y = 5.5, yend = 6.5), linetype="dotted", colour = "black", linewidth = 1)} +
+    {if(max_yr>=1993)geom_segment(aes(x = max(1992.5,min_yr), xend = max(yr_end), y = 6.5, yend = 6.5), linetype="dotted", colour = "black", linewidth = 1)}
   
   graph_1
 }
@@ -118,7 +119,7 @@ for (j in 1:length(seasons)) {
   tables[[j]] <- tables_wiki[[wiki_table_no[j]]]  %>% # added to my list
     mutate(season_no = j, season = seasons[j])
   
-  if (j%%5==0) print(paste("season = ", seasons[j])) 
+  if (j%%5==0) print(paste("season = ", seasons[j], sep="")) 
 }
 
 # Review headers in each of the tables - need consistency of names for combining tables
@@ -225,7 +226,10 @@ nsl_tables = tables_all %>%
   mutate(runners_up = ifelse(Team == Runners_up, 1, 0),
          runners_up = ifelse(Team == "Eastern Suburbs" & season == "1978", 1, runners_up),
          gf_years = ifelse(yr_end >= 1984 & !(yr_end == 1987), 1, 0),
-         grand_finalist = (champion + runners_up) * gf_years,) %>%
+         grand_finalist = (champion + runners_up) * gf_years,
+         missed_gf = (1 - grand_finalist) * gf_years,
+         finals_years = ifelse(yr_end %in% c(1977, 1981, 1983), 0, 1),
+         missed_finals = (1 - finals) * finals_years) %>%
   group_by(season) %>%
   mutate(count_teams = n(),
          wooden_spoon = ifelse(Pos == max(Pos), 1, 0),
@@ -237,7 +241,7 @@ nsl_tables = tables_all %>%
     season_no %in% c(9, 11, 13) ~ "Sth",
     TRUE ~ "Aust"),
     count_teams_div = ifelse(yr_end %in% c(1984, 1985, 1986), count_teams / 2, count_teams)) %>%
-  select(Pos:champion, runners_up:grand_finalist, premiers:relegated, count_teams, conference:count_teams_div, 
+  select(Pos:champion, runners_up:missed_finals, premiers:relegated, count_teams, conference:count_teams_div, 
          wooden_spoon, pts_per_win:goals_per_game, yr_end)
 
 # Create a table of team names, including history & past team name changes
@@ -278,24 +282,8 @@ nsl_tables = nsl_tables_all %>%
   mutate(next_pos = ifelse(current_name == lead(current_name), lead(Pos), NA)) %>%
   arrange(season_no, Pos) %>%
   mutate(pos_diff = ifelse(is.na(prev_pos), NA, -(Pos - prev_pos)),
-         pos_abs_diff = abs(pos_diff)) %>%
-  group_by(current_name) %>%
-  mutate(cum_champions = cumsum(champion),
-         streak_champion = c(ave(c(0, champion), cumsum(c(0, champion) == 0), FUN = seq_along) - 1)[-1],
-         streak_missed_champion = c(ave(c(0, champion), cumsum(c(0, champion) > 0), FUN = seq_along) - 1)[-1],
-         cum_runners_up = cumsum(runners_up),
-         streak_runners_up = c(ave(c(0, runners_up), cumsum(c(0, runners_up) == 0), FUN = seq_along) - 1)[-1],
-         cum_premiers = cumsum(premiers),
-         streak_premiers = c(ave(c(0, premiers), cumsum(c(0, premiers) == 0), FUN = seq_along) - 1)[-1],
-         streak_missed_premiers = c(ave(c(0, premiers), cumsum(c(0, premiers) > 0), FUN = seq_along) - 1)[-1],
-         cum_finals = cumsum(finals),
-         streak_finals = c(ave(c(0, finals), cumsum(c(0, finals) == 0), FUN = seq_along) - 1)[-1],
-         streak_missed_finals = c(ave(c(0, finals), cumsum(c(0, finals) > 0), FUN = seq_along) - 1)[-1],
-         cum_grand_finals = cumsum(grand_finalist),
-         streak_grand_finals = c(ave(c(0, grand_finalist), cumsum(c(0, grand_finalist) == 0), FUN = seq_along) - 1)[-1],
-         streak_missed_grand_finals = c(ave(c(0, grand_finalist), cumsum(c(0, grand_finalist) > 0), FUN = seq_along) - 1)[-1]) %>%
-  ungroup() %>%
-  mutate(row_number = row_number(),
+         pos_abs_diff = abs(pos_diff),
+         row_number = row_number(),
          releg_yr_1 = case_when(
            abbrev == "SYO" ~ 1979,
            abbrev == "STG" ~ 1980,
@@ -316,7 +304,34 @@ nsl_tables = nsl_tables_all %>%
          nsl_stint = case_when(
            yr_end > releg_yr_2 ~ 3,
            yr_end > releg_yr_1 ~ 2,
-           TRUE ~ 1))
+           TRUE ~ 1)) %>%
+  group_by(current_name) %>%
+  mutate(cum_champions = cumsum(champion),
+         streak_champion = c(ave(c(0, champion), cumsum(c(0, champion) == 0), FUN = seq_along) - 1)[-1],
+         streak_missed_champion = c(ave(c(0, champion), cumsum(c(0, champion) > 0), FUN = seq_along) - 1)[-1],
+         cum_runners_up = cumsum(runners_up),
+         streak_runners_up = c(ave(c(0, runners_up), cumsum(c(0, runners_up) == 0), FUN = seq_along) - 1)[-1],
+         cum_premiers = cumsum(premiers),
+         streak_premiers = c(ave(c(0, premiers), cumsum(c(0, premiers) == 0), FUN = seq_along) - 1)[-1],
+         streak_missed_premiers = c(ave(c(0, premiers), cumsum(c(0, premiers) > 0), FUN = seq_along) - 1)[-1]) %>%
+  ungroup() %>%
+  # streaks for finals - did not occur in every year
+  arrange(current_name, finals_years, season_no) %>%
+  group_by(current_name) %>%
+  mutate(cum_finals = cumsum(finals),
+         streak_finals = c(ave(c(0, finals), cumsum(c(0, finals) == 0), FUN = seq_along) - 1)[-1],
+         cum_missed_finals = cumsum(missed_finals),
+         streak_missed_finals = c(ave(c(0, missed_finals), cumsum(c(0, missed_finals) == 0), FUN = seq_along) - 1)[-1]) %>%
+  ungroup() %>%
+  # streaks for grand finals - did not occur in every year  
+  arrange(current_name, gf_years, season_no) %>%
+  group_by(current_name) %>%
+  mutate(cum_grand_finals = cumsum(grand_finalist),
+         streak_grand_finals = c(ave(c(0, grand_finalist), cumsum(c(0, grand_finalist) == 0), FUN = seq_along) - 1)[-1],
+         cum_missed_gf = cumsum(missed_gf),
+         streak_missed_grand_finals = c(ave(c(0, missed_gf), cumsum(c(0, missed_gf) == 0), FUN = seq_along) - 1)[-1]) %>%
+  ungroup() %>%
+  arrange(season_no, Pos)
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -677,52 +692,52 @@ check_identical_pos = nsl_tables %>%
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # run function to produce graph for a specific team
-make_graph_nsl("ADC") 
-make_graph_nsl("API")
-make_graph_nsl("BRC")
-make_graph_nsl("BRL") 
-make_graph_nsl("CAN")
-make_graph_nsl("FOO")
-make_graph_nsl("HEI")
-make_graph_nsl("MAR")
-#make_graph_nsl("MOO"). Only 1 season in NSL
-make_graph_nsl("NUN")
-make_graph_nsl("SOU") 
-make_graph_nsl("STG")
-make_graph_nsl("SYC")
-make_graph_nsl("SYO") 
-make_graph_nsl("WSA")
-#make_graph_nsl("WST"). Only 2 seasons in NSL to 1978
-#make_graph_nsl("BLA"). Never more than 3 consecutive seasons in NSL
-make_graph_nsl("WOL")
-make_graph_nsl("PRE")
+make_graph_nsl("ADC")    # Adelaide City
+make_graph_nsl("API")    # APIA Leichhardt
+make_graph_nsl("BRC")    # Brisbane City
+make_graph_nsl("BRL")    # Brisbane Lions
+make_graph_nsl("CAN")    # Canberra City
+make_graph_nsl("FOO")    # Footscray JUST
+make_graph_nsl("HEI")    # Heidelberg United
+make_graph_nsl("MAR")    # Marconi Stallions
+#make_graph_nsl("MOO")     Mooroolbark - Only 1 season in NSL
+make_graph_nsl("NUN")    # Newcastle KB United
+make_graph_nsl("SOU")    # South Melbourne
+make_graph_nsl("STG")    # St George-Budapest
+make_graph_nsl("SYC")    # Sydney City
+make_graph_nsl("SYO")    # Sydney Olympic
+make_graph_nsl("WSA")    # West Adelaide
+#make_graph_nsl("WST")     Western Suburbs - Only 2 seasons in NSL to 1978
+#make_graph_nsl("BLA")     Blacktown City - Never more than 3 consecutive seasons in NSL
+make_graph_nsl("WOL")    # Wollongong Wolves
+make_graph_nsl("PRE")    # Preston Makedonia
 
 # New teams from 1984
-make_graph_nsl("SUN")
-#make_graph_nsl("PEN"). Only 2 seasons in NSL
-#make_graph_nsl("MEA"). Graph is mostly blank space 
-#make_graph_nsl("NRU"). Only 3 seasons in NSL
-make_graph_nsl("MKN")
-#make_graph_nsl("BRU"). Graph is mostly blank space
-#make_graph_nsl("GRE"). Only 3 seasons in NSL
-make_graph_nsl("SGC")
-#make_graph_nsl("INT"). Only 2 seasons in NSL
-#make_graph_nsl("CBY"). Only 1 season in NSL
-#make_graph_nsl("WMA"). Only 1 season in NSL
-make_graph_nsl("NBR")
-make_graph_nsl("BRS")
-make_graph_nsl("MOR")
+make_graph_nsl("SUN")    # Sydney United
+#make_graph_nsl("PEN")     Penrith City - Only 2 seasons in NSL
+#make_graph_nsl("MEA")     Parramatta Eagles - Graph is mostly blank space 
+#make_graph_nsl("NRU")     Newcastle Rosebud United - Only 3 seasons in NSL
+make_graph_nsl("MKN")    # Melbourne Knights
+#make_graph_nsl("BRU")     Brunswick Juventus - Graph is mostly blank space
+#make_graph_nsl("GRE")     Green Gully - Only 3 seasons in NSL
+make_graph_nsl("SGC")    # Sunshine George Cross
+#make_graph_nsl("INT")     Inter Monaro - Only 2 seasons in NSL
+#make_graph_nsl("CBY")     Canterbury Marrickville - Only 1 season in NSL
+#make_graph_nsl("WMA")     Wollongong Macedonia - Only 1 season in NSL
+make_graph_nsl("NBR")    # Newcastle Breakers
+make_graph_nsl("BRS")    # Brisbane Strikers
+make_graph_nsl("MOR")    # Morwell Falcons
 
 # new after 1995
-make_graph_nsl("CCO")
-make_graph_nsl("PER")   # Perth Glory
-#make_graph_nsl("COL").  Collingwood Warriors. Only 1 season in NSL
-#make_graph_nsl("CAR").  Carlton. Only 4 seasons in NSL
-make_graph_nsl("NSP")
-make_graph_nsl("FKZ")
-make_graph_nsl("PAR")
-#make_graph_nsl("NEW"). Only 4 seasons in NSL
-#make_graph_nsl("ADE"). Only 1 season in NSL 
+make_graph_nsl("CCO")    # Canberra Cosmos
+make_graph_nsl("PER")    # Perth Glory
+#make_graph_nsl("COL")     Collingwood Warriors. Only 1 season in NSL
+#make_graph_nsl("CAR")     Carlton. Only 4 seasons in NSL
+make_graph_nsl("NSP")    # Northern Spirit
+make_graph_nsl("FKZ")    # Football Kingz
+make_graph_nsl("PAR")    # Parramatta Power
+#make_graph_nsl("NEW")     Newcastle United - Only 4 seasons in NSL
+#make_graph_nsl("ADE")     Adelaide United - Only 1 season in NSL 
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -734,7 +749,7 @@ save(tables, file = "nsl_tables_raw.Rdata")
 save(nsl_tables, file = "nsl_tables.Rdata")
 write.csv(nsl_tables, file = "nsl_tables_full.csv")
 write.csv(nsl_all_time_league_table, file = "nsl_all_time_league_table.csv")
-#write.csv(error_sorted_pos, file = "nsl_error_sorted_pos.csv")
+write.csv(season_totals, file = "nsl_season_totals.csv")
 setwd(path) 
 
 # export single graph
@@ -758,14 +773,6 @@ setwd(path)
 
 
 # To do:
-# Have combined NSL/A-League chart for the clubs which were in both competitions
-# add names in comments to make_graph_nsl
-# consider different coloured point on chart for champions - take from AFL
-
-# Check count_gf, gf_years 
-# Check streaks for gaps - e.g. years when there was no Grand Final
-
-# Graph of season_totals data - ave_goals_scored_game, min & max
 
 
 
